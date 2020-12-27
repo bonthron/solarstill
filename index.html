@@ -1,0 +1,815 @@
+﻿<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" type="text/css" href="../../inc/style.css" />
+    <title>Solar Still</title>
+
+    <style type="text/css">
+
+      body {
+          font-family: 'Inter', sans-serif;          
+          font-size:14px;
+          line-height:18px;
+      }
+
+      select {
+          width:150px;
+          margin-top:2px;
+      }
+
+
+      .btn {
+          display:block;
+          vertical-align:top;
+          width: 100px;
+          height:25px; 
+          line-height:25px; 
+          vertical-align:top;
+          color:#fff;
+          text-align:center; 
+          border-radius:4px;
+          background-color:#ccc;
+          cursor:auto;
+          text-decoration:none;
+          letter-spacing:1px;
+          border:0px;
+          outline:none;
+      }
+
+      .btn {
+          background-color:#5D6066;
+          cursor:pointer;
+      }
+
+      .btn:hover {
+          background-color:#222; 
+      }
+
+      .btn:active {
+          -ms-transform: translate(0px, 1px);
+          -webkit-transform: translate(0px, 1px);
+          transform: translate(0px, 1px);
+      }
+
+      .btn.disabled {
+          background-color:#ddd;
+      }
+      .btn.disabled:active {
+          -ms-transform: translate(0px, 0px);
+          -webkit-transform: translate(0px, 0px);
+          transform: translate(0px, 0px);
+          background-color:#ddd;
+      }
+      .btn.disabled:hover {
+
+      } 
+
+
+    </style>
+    <link rel="stylesheet" type="text/css" href="DataTable.css" />
+
+    <script type="text/javascript" src="js/jquery-1.9.1.min.js"></script>
+    <script type="text/javascript" src="js/Bacon.min.js"></script>
+    <script type="text/javascript" src="js/createjs-2015.11.26.min.js"></script>
+    <script type="text/javascript">var cjs = createjs;</script>
+    <script type="text/javascript" src="js/imageManifest.js"></script>
+    <script type="text/javascript" src="js/DataTable.js"></script>
+
+    <script type="text/javascript">
+      /*
+       ---------------------------------------------------------------------
+       9-bit bitmask:
+       000000000
+
+       0          0        0        0          0      0       0        0     0   
+       dimension  ins-none ins-thin ins-thick  deg-0  deg-20  deg-40   tint  filter   
+
+
+       dimensionFlag:   0 = 2x1  
+       1 = 1.5x1.5                
+
+       tint:            0 = none 
+       1 = tinted
+
+       filter:          0 = off
+       1 = on
+
+       degree0:         1 = is 0 degrees 
+       degree20:        1 = is 20 degrees 
+       degree40:        1 = is 40 degrees 
+
+       insulation none  1 = is none
+       insulation thin  1 = is thin
+       insulation thick 1 = is thick
+       ---------------------------------------------------------------------
+      */
+
+      window.onload = function(){
+
+          var s = new Still();
+      };
+
+      // --------------------------------------------------------------------- Still
+      function Still(){
+
+          cjs.Ticker.framerate = 60;
+          cjs.Ticker.timingMode = cjs.Ticker.RAF;
+
+          this.stage = new cjs.Stage("canvas1");
+          cjs.Ticker.addEventListener('tick', this.stage);
+
+          var self = this;
+          this.queue = new createjs.LoadQueue(true);
+          this.queue.on("complete", function(){ 
+              self.init();
+          });    
+          this.queue.on("error", function(e){ console.log(e); });    
+
+          this.queue.loadManifest(imageManifest);
+
+          var OUTPUT = [];
+          OUTPUT["010001000"] = 8.5;
+          OUTPUT["010001010"] = 3.8;
+          OUTPUT["010000100"] = 8.6;
+          OUTPUT["010000110"] = 3.9;
+          OUTPUT["001001000"] = 13.0;
+          OUTPUT["000101000"] = 13.0;
+          OUTPUT["001001010"] = 7.4;
+          OUTPUT["000101010"] = 7.4;
+          OUTPUT["001000100"] = 13.4;
+          OUTPUT["000100100"] = 13.4;
+          OUTPUT["001000110"] = 7.7;
+          OUTPUT["000100110"] = 7.7;
+          OUTPUT["110001000"] = 8.8;
+          OUTPUT["110001010"] = 3.9;
+          OUTPUT["110000100"] = 8.8;
+          OUTPUT["110000110"] = 4.0;
+          OUTPUT["101001000"] = 13.7;
+          OUTPUT["100101000"] = 13.7;
+          OUTPUT["101001010"] = 7.8;
+          OUTPUT["100101010"] = 7.8;
+          OUTPUT["101000100"] = 13.8;
+          OUTPUT["100100100"] = 13.8;
+          OUTPUT["101000110"] = 8.0;
+          OUTPUT["100100110"] = 8.0;
+
+          this.OUTPUT = OUTPUT;
+          this.MAX_OUTPUT = 13;
+      }
+
+      // --------------------------------------------------------------------- init
+      Still.prototype.init = function(){
+
+          var self = this;
+
+          this.bg1 = new cjs.Shape();
+          this.bg1.graphics
+              .beginFill("#a1ce43")
+              .drawRect(0, 0, 720, 500);
+
+          this.bg2 = new cjs.Shape();
+          this.bg2.graphics
+              .beginFill("#a1ce43")
+              .drawRect(0, 150, 720, 300);
+          this.bg2.cache(0,0, 720, 500);
+
+          var solar = new cjs.Bitmap();
+          var filterImg = new cjs.Bitmap(this.queue.getResult("filter"));
+          var caps = new cjs.Bitmap();
+          this.waterCollecting = new cjs.Bitmap();
+          this.waterCollecting.alpha = 0;
+
+          this.backglass = new cjs.Shape();
+          this.dropanime = new cjs.Shape();
+          this.glass = new cjs.Shape();
+          this.beaker = new cjs.Bitmap(this.queue.getResult("beaker"));
+
+
+          this.sunn = new cjs.Container();
+          this.sunGrad = new cjs.Shape();
+          this.sunGrad.graphics
+              .beginRadialGradientFill([cjs.Graphics.getRGB(0xffffff, 1), cjs.Graphics.getRGB(0xffffff, 0)], [0.4, 1], 100, 100, 0, 100, 100, 50)
+              .drawCircle(100, 100, 50)
+              .ef();
+          this.sunGrad.cache(0,0,150,150);
+          this.sunGrad.regX = this.sunGrad.regY = 100;
+          this.sunGrad.x = 400;
+          this.sunn.addChild(this.sunGrad);
+
+          this.resetSun = function(){
+              self.sunn.x = 200;
+              self.sunn.y = 400;
+              self.sunn.rotation = -15;
+              self.sunGrad.scaleX = self.sunGrad.scaleY = 1;
+          };
+          this.resetSun();
+
+
+          var waterContainer = new cjs.Container();
+
+          this.water = new cjs.Shape();
+          this.water.graphics
+              .beginFill("#0000ff")
+              .drawEllipse(100,141, 65, 26)
+              .drawRect(100,111, 64.5, 40.5)
+              .ef()
+              .beginFill("#0000dd")
+              .drawEllipse(100,100, 65, 26)
+              .ef();
+          this.water.cache(0,0,300,300);
+
+          this.mask = new cjs.Shape();
+          this.mask.graphics
+              .beginFill("#000000")
+              .drawEllipse(100,141, 65, 26)
+              .drawRect(100,111, 64.5, 40.5)
+              .drawEllipse(100,100, 65, 26)
+              .ef();
+          this.mask.cache(0,0,300,300);
+
+          waterContainer.addChild(this.water);
+          waterContainer.mask = this.mask;
+          // waterContainer.addChild(this.mask);
+
+          
+          this.waterStream = new cjs.Shape();
+          this.waterStream.graphics
+              .setStrokeStyle(2)
+              .beginStroke("#0000ff")
+              .moveTo(10,10)
+              .lineTo(10,90)
+              .es();
+          this.waterStream.cache(0,0,20,100);
+          this.waterStream.visible = false;
+
+
+          this.stage.addChild(this.bg1);
+          this.stage.addChild(this.sunn);
+          this.stage.addChild(this.bg2);
+          this.stage.addChild(this.waterStream);
+          this.stage.addChild(waterContainer);
+          this.stage.addChild(this.beaker);
+          this.stage.addChild(solar);
+          this.stage.addChild(this.waterCollecting);
+          this.stage.addChild(caps);
+          this.stage.addChild(this.backglass);
+          this.stage.addChild(this.glass);
+          this.stage.addChild(this.dropanime);    
+          this.stage.addChild(filterImg);
+
+
+          var targetVal = function(e){ return e.currentTarget.value; };
+
+          var dimension  = $("#dimensionSelect").asEventStream("change").map(targetVal).startWith("0");
+          var filter     = $("#filterSelect").asEventStream("change").map(targetVal).startWith("1");
+          var tint       = $("#tintSelect").asEventStream("change").map(targetVal).startWith("0");
+          var insulation = $("#insulationSelect").asEventStream("change").map(targetVal).startWith("100");
+          var degree     = $("#angleSelect").asEventStream("change").map(targetVal).startWith("001");
+
+
+          var bits = Bacon.combineWith(function(d,i,deg,t,f){ return bin(d + i + deg + t + f); }, dimension, insulation, degree, tint, filter);
+
+
+          bits.onValue(function(b){
+
+              var dimensionInsulationOnly = (b | bin("000011111")) & bin("111100000"); 
+              solar.image = self.queue.getResult(binStr(dimensionInsulationOnly));
+              
+              filterImg.visible = b & bin("000000001");
+              caps.image = self.queue.getResult(binStr(dimensionInsulationOnly | bin("011000000"))); 
+
+              self.waterCollecting.image = self.queue.getResult(binStr(dimensionInsulationOnly | bin("011000000")) + "_collecting"); 
+
+
+              var key = binStr((b | bin("000000001")) & bin("111111110")); //ignore filter 
+
+              var output = self.OUTPUT[key] ? self.OUTPUT[key] : 0;
+
+              var tableObj = self.translate(b);
+              tableObj.output = output;
+
+              self.configBin = b;
+              self.configObj = tableObj;
+
+              self.resetAnime(b);
+              self.drawGlass(b);
+          });
+
+
+          this.tableConfig = { DOMcontainer: "table1",
+                               columns: [
+                                   ["d", "Dimensions"],
+                                   ["deg", "Angle of Lid"],
+                                   ["i", "Amount of Insulation"],
+                                   ["t", "Lid Color"],
+                                   ["output", "Water Output (L)"] ],
+                               minRows: 6,
+                               maxRows: 40,
+                               features: ["remove"] };
+          
+          this.table1 = new BordDataTable("solarStill2017");
+          this.table1.init(this.tableConfig);
+
+
+          $("#runTrialBtn").on('click', function(){ self.runTrial(); })
+      }
+
+
+      // --------------------------------------------------------------------- resetAnime
+      Still.prototype.resetAnime = function(b){
+          
+          var dim = (binStr(b & bin("100000000")) == "000000000") ? "2 x 1" : "1.5 x 1.5"; 
+          
+          if(dim == "2 x 1"){
+              
+              this.beaker.x = 525;
+              this.beaker.y = 325;
+              this.waterStream.x = 550;
+              this.waterStream.y = 311;
+              this.mask.x = 442;
+              this.mask.y = 237.5;
+              this.water.x = 442;
+              this.water.y = 310;
+              
+          }else{ // 1.5 x 1.5
+              
+              this.beaker.x = 417;
+              this.beaker.y = 300;
+              this.waterStream.x = 436;
+              this.waterStream.y = 285;
+              this.mask.x = 334;
+              this.mask.y = 212.5;
+              this.water.x = 334;
+              this.water.y = 285
+          };
+      };
+
+
+
+      // --------------------------------------------------------------------- translate
+      // get human friendly strings for data table
+
+      Still.prototype.translate = function(b){
+
+          var dim;
+          dim = (binStr(b & bin("100000000")) == "000000000") ? "2 x 1" : "1.5 x 1.5"; 
+
+          var ins;
+          switch(binStr(b & bin("011100000"))){
+          case "010000000": ins = "none";  break;
+          case "001000000": ins = "1-inch thick";  break;
+          case "000100000": ins = "2-inch thick"; break;
+          }
+          
+          var deg;
+          switch(binStr(b & bin("000011100"))){
+          case "000010000": deg = "0&deg;";  break;
+          case "000001000": deg = "20&deg;"; break;
+          case "000000100": deg = "40&deg;"; break;
+          }
+          
+          var tint;
+          tint = (binStr(b & bin("000000010")) == "000000000") ? "colorless" : "tinted"; 
+
+          var filter;
+          filter = (binStr(b & bin("000000001")) == "000000000") ? "off" : "on";  
+
+          return { d:dim,
+                   i:ins,
+                   deg:deg,
+                   t:tint,
+                   f:filter };
+      }
+
+
+      // --------------------------------------------------------------------- runTrial
+      Still.prototype.runTrial = function(){
+
+          var self = this;
+
+          var WATER = this.water;
+          var SUN   = this.sunn;
+          var BG    = this.bg1.graphics;
+          
+          $("select").prop("disabled", "disabled");
+          $("#runTrialBtn").prop("disabled", "disabled");
+          $("#runTrialBtn").addClass("disabled");
+
+          this.resetAnime(this.configBin);
+
+          // TWEEN SUN
+          cjs.Tween.get( SUN ).to({rotation:-50}, 3 * 1000, cjs.Ease.sineOut)
+          cjs.Tween.get( SUN ).to({y:200}, 1 * 5000, cjs.Ease.sineOut)
+          cjs.Tween.get(this.sunGrad).wait(500).to({scaleX:2, scaleY:2}, 2 * 1000, cjs.Ease.sineOut);
+
+
+          // TWEEN BG COLOR
+          BG.clear()
+              .beginFill("#a1ce43")
+              .drawRect(0, 0, 720, 500)
+              .ef()
+
+          var colorTween = cjs.Tween.get({c:0})
+              .to({c:1}, 1000)
+              .wait(3000)
+              .to({c:0}, 1000)
+              .wait(500)
+              .call(function(){
+                  self.endTrial();
+              });
+
+          colorTween.addEventListener("change", function(evt){
+              var c = evt.target.target.c;
+              BG.clear()
+                  .beginFill("#" + interpolateColor("a1ce43", "ccfc68", c))
+                  .drawRect(0, 0, 720, 500)
+                  .ef()
+          });
+
+
+          // TWEEN WATER LEVEL
+          if(this.configObj.output > 0){
+
+              var maxWaterMovementY = 48; //70px - 22 = 48 minimum pixel movement
+              var perc = (this.configObj.output / this.MAX_OUTPUT);
+              var newLevel = WATER.y - ((perc * maxWaterMovementY) + 22);
+
+              this.waterStream.visible = true;
+              cjs.Tween.get( WATER ).to({y:newLevel}, 4 * 1000, cjs.Ease.sineOut).call(function(){
+                  self.waterStream.visible = false;
+              });
+
+              cjs.Tween.get(this.waterCollecting)
+                  .to({alpha:1}, 1000, cjs.Ease.sineIn)
+                  .wait(3000)
+                  .to({alpha:0}, 1000, cjs.Ease.sineIn)
+
+          };
+
+          // START DROPS
+          this.runDropAnime(this.configBin);
+      }
+
+
+      // --------------------------------------------------------------------- endTrial
+      Still.prototype.endTrial = function(){
+
+          this.resetSun();
+
+          $("select").prop("disabled", false);
+          $("#runTrialBtn").prop("disabled", false);
+          $("#runTrialBtn").removeClass("disabled");
+
+          this.table1.addDataToTable(this.configObj);
+      }
+
+
+      // --------------------------------------------------------------------- runDropAnime
+      Still.prototype.runDropAnime = function(b){
+
+          var self = this;
+
+          var p = this.getLandmarkPoints(b);
+          var maxDistance = getLineLength(p["B"], p["F"]) - 20;
+          var averageSlope = (getSlope(p["B"], p["F"]) +  getSlope(p["C"], p["E"]))/2
+
+          var tint = (binStr(b & bin("000000010")) == "000000010");
+          var zeroDegrees = (binStr(b & bin("000010000")) == "000010000");
+          
+          if(!tint){
+              var color1 = cjs.Graphics.getRGB(0x0000FF, 1);
+              var color2 = cjs.Graphics.getRGB(0x0000FF, 0.20);
+          }else{
+              var color1 = cjs.Graphics.getRGB(0x000000, 1);
+              var color2 = cjs.Graphics.getRGB(0x000000, 0.20);
+          }
+
+          var G = self.dropanime.graphics;
+
+          var SPEED = 70; // ms
+          var NUM = 30;
+          var DROP_SIZE = 20;
+          var tickDelay = 50;
+          var maxPts = 0;
+
+          var perc = (this.configObj.output / this.MAX_OUTPUT);
+          NUM = Math.floor(perc * NUM);
+
+          var drops = [];
+
+          for(var i=0; i < NUM; i++){
+              var pts = [];
+              var start = getPointOnLineByRelativeDistance(p["E"], p["F"], rand(5,95));
+              var dist = rand(20, maxDistance);
+
+              while(dist < maxDistance){
+                  var nextP = getPointOnLineBySlope(start, averageSlope, dist)
+                  pts.push(nextP);
+                  dist += DROP_SIZE;
+              };
+
+              var startIndex = rand(-tickDelay, 1);
+              drops.push({id:i, pts:pts, index: startIndex});
+
+              maxPts = Math.max(maxPts, pts.length);
+          };
+
+
+          // ZERO DEGREES
+          if(zeroDegrees){
+              drops = [];
+              NUM = 10;
+              maxPts = 30;
+
+              for(var i=0; i < NUM; i++){
+                  var pts = [];
+                  var start = getPointOnLineByRelativeDistance(p["E"], p["F"], rand(5,95));
+                  var dist = rand(20, maxDistance);
+                  var nextP = getPointOnLineBySlope(start, averageSlope, dist);
+                  for(var j=0; j < 20; j++){
+                      pts.push({x:nextP.x, y:nextP.y += (j * 0.1)});
+                  };
+
+                  var startIndex = rand(-tickDelay, 1);
+                  drops.push({id:i, pts:pts, index:startIndex});
+              };
+          };
+
+
+          var loop = Bacon.repeat(function(i){
+              if(i < (tickDelay + maxPts)){
+                  return Bacon.later(SPEED, drops);
+              }else{
+                  return false;
+              }
+          })
+              .map(function(a){
+                  return a.map(function(o){ o.index++; return o; });
+              })
+              .onValue(function(o){
+                  G.clear();
+                  o.map(function(d){
+                      var i= d.index;
+                      
+                      if(i > 1 && (i < d.pts.length)){
+                          if(zeroDegrees){
+                              if(i > 10){
+                                  G.ss(2,1)
+                                      .s(color2)
+                                      .mt(d.pts[i].x, d.pts[i].y)
+                                      .lt(d.pts[i].x, d.pts[i].y + 6)
+                                      .es()
+                              }else{
+                                  G.ss(2,1)
+                                      .s(color1)
+                                      .mt(d.pts[i].x, d.pts[i].y)
+                                      .lt(d.pts[i].x, d.pts[i].y + 1)
+                                      .es()
+                              };
+                          }else{
+                              G.ss(.5,1)
+                                  .s(color1)
+                                  .mt(d.pts[i-1].x, d.pts[i-1].y)
+                                  .lt(d.pts[i].x, d.pts[i].y)
+                                  .es()
+                                  .s(color2)
+                                  .mt(d.pts[0].x, d.pts[0].y)
+                                  .lt(d.pts[i].x, d.pts[i].y)
+                                  .es();
+                          };
+                      };
+                  });
+              });
+      }
+
+
+      // --------------------------------------------------------------------- drawGlass
+      //   
+      //       F
+      //      / ` 
+      //   E |`   `  
+      //     |   `   ` 
+      //   A |---- `   `-- | B 
+      //     |       `     |
+      //   D | ----------- | C
+      //   
+      Still.prototype.drawGlass = function(b){
+
+          var p = this.getLandmarkPoints(b);
+          var tint = b & bin("000000010");
+
+          var g = this.glass.graphics;
+          var bg = this.backglass.graphics;
+          var color = tint ? cjs.Graphics.getRGB(0x000000, 0.3) : cjs.Graphics.getRGB(0xFFFFFF, 0.4);
+
+          g.clear();
+          bg.clear();
+
+          // back, add 1 to x to create back corner illusion
+          bg.f(color)
+              .mt(p["F"].x + 1, p["F"].y)
+              .lt(p["F"].x + 1, p["F"].y)
+              .lt(p["B"].x, p["B"].y)
+              .lt(p["A"].x + 1, p["A"].y)
+              .lt(p["F"].x + 1, p["F"].y)
+              .ef()
+          
+          // left
+          g.f(color)
+              .mt(p["F"].x, p["F"].y)
+              .lt(p["A"].x, p["A"].y)
+              .lt(p["D"].x, p["D"].y)
+              .lt(p["E"].x, p["E"].y)
+              .lt(p["F"].x, p["F"].y)
+              .ef()
+          
+          // top
+          g.f(color)
+              .mt(p["F"].x, p["F"].y)
+              .lt(p["B"].x, p["B"].y)
+              .lt(p["C"].x, p["C"].y)
+              .lt(p["E"].x, p["E"].y)
+              .lt(p["F"].x, p["F"].y)
+              .ef()
+
+      }
+
+
+      // --------------------------------------------------------------------- getLandmarkPoints
+      //
+      //   LANDMARKS:
+      //   
+      //       F
+      //      / ` 
+      //   E |`   `  
+      //     |   `   ` 
+      //   A |---- `   `-- | B 
+      //     |       `     |
+      //   D | ----------- | C
+      //   
+      Still.prototype.getLandmarkPoints = function(b){
+
+          var config = (b | bin("011100011")) & bin("100011100"); // mask insulation, tint, filter
+
+          var points = {};
+          points["000010000"] = {"A":{x:208,y:191}, "B":{x:582,y:238}, "C":{x:519,y:308}, "D":{x:88,y:245}, "E":{x:88,y:245}, "F":{x:208,y:191}  };
+          points["000001000"] = {"A":{x:208,y:191}, "B":{x:582,y:238}, "C":{x:519,y:308}, "D":{x:88,y:245}, "E":{x:83,y:166}, "F":{x:204, y:127} };
+          points["000000100"] = {"A":{x:208,y:191}, "B":{x:582,y:238}, "C":{x:519,y:308}, "D":{x:88,y:245}, "E":{x:80,y:88},  "F":{x:203, y:61}  };
+          points["100010000"] = {"A":{x:257,y:170}, "B":{x:507,y:200}, "C":{x:396,y:290}, "D":{x:88,y:245}, "E":{x:88,y:245}, "F":{x:257, y:170} };
+          points["100001000"] = {"A":{x:257,y:170}, "B":{x:507,y:200}, "C":{x:396,y:290}, "D":{x:88,y:245}, "E":{x:83,y:166}, "F":{x:253, y:110} };
+          points["100000100"] = {"A":{x:257,y:170}, "B":{x:507,y:200}, "C":{x:396,y:290}, "D":{x:88,y:245}, "E":{x:80,y:90},  "F":{x:255, y:50}  };
+
+          return points[binStr(config)];
+      }
+
+
+
+      // --------------------------------------------------------------------- binary
+      function bin(str){
+          return parseInt(str, 2);
+      }
+
+      function binStr(b){
+          // pad with leading zeros;
+          var n = b.toString(2);
+          return "000000000".substr(n.length) + n;
+      }
+
+
+
+      // --------------------------------------------------------------------- line equations
+      function getSlope(pt1, pt2){
+          return (pt2.y - pt1.y) / (pt2.x - pt1.x);
+      };
+
+      function getLineLength(pt1, pt2){
+          return Math.sqrt(Math.pow(pt2.x - pt1.x, 2) + Math.pow(pt2.y - pt1.y, 2));
+      };
+
+
+      function getPointOnLineByRelativeDistance(pt1, pt2, perc){
+
+          var slope = (pt2.y - pt1.y) / (pt2.x - pt1.x);
+          var distance = Math.sqrt(Math.pow(pt2.x - pt1.x, 2) + Math.pow(pt2.y - pt1.y, 2));
+          var l = (perc/100) * distance;
+          var m = slope;
+          var dx = (l / Math.sqrt(1 + (m * m)));
+          var dy = m * dx;
+
+          var a = {x:0,y:0};
+          a.x = pt1.x + dx;
+          a.y = pt1.y + dy;
+
+          return a;
+      }
+
+      function getPointOnLineBySlope(pt1, slope, distance){
+
+          var l = distance;
+          var m = slope;
+          var dx = (l / Math.sqrt(1 + (m * m)));
+          var dy = m * dx;
+
+          var a = {x:0,y:0};
+          a.x = pt1.x + dx;
+          a.y = pt1.y + dy;
+
+          return a;
+      }
+
+
+
+      // --------------------------------------------------------------------- colors
+      function rgbToHex(R,G,B) {return toHex(R)+toHex(G)+toHex(B)};
+      function toHex(n) {
+          n = parseInt(n,10);
+          if (isNaN(n)) return "00";
+          n = Math.max(0,Math.min(n,255));
+          return "0123456789ABCDEF".charAt((n-n%16)/16)
+              + "0123456789ABCDEF".charAt(n%16);
+      };
+      function hexToRgb(hex) {
+          var bigint = parseInt(hex, 16);
+          var r = (bigint >> 16) & 255;
+          var g = (bigint >> 8) & 255;
+          var b = bigint & 255;
+          return [r,g,b];
+      };
+      function interpolateColor(hex1, hex2, f){
+
+          var c1 = hexToRgb(hex1);
+          var c2 = hexToRgb(hex2);
+          var r1 = c1[0], g1 = c1[1], b1 = c1[2];
+          var r2 = c2[0], g2 = c2[1], b2 = c2[2];
+
+          var R = r1 + f * (r2 - r1);
+          var G = g1 + f * (g2 - g1);
+          var B = b1 + f * (b2 - b1);
+
+          return rgbToHex(R,G,B);
+      };
+
+
+      function rand(min,max)
+      {
+          return Math.floor(Math.random()*(max-min+1)+min);
+      }
+
+
+    </script>
+
+  </head>
+  <body>
+    <div style="padding:20px; overflow:auto;">
+
+      <div style="width:600px; float:left;">
+
+        <canvas id="canvas1" width="700" height="450" style="background-color:#a1ce43; box-shadow:1px 1px 1px 0px #888; width:600px;"></canvas>
+
+      </div>
+
+
+      <div id="controls" style="width:160px; float:left; padding:20px; border:1px solid #ddd; margin-left:20px; background-color:#fff;">
+        
+        Dimensions:<br />
+        <select id="dimensionSelect">
+          <option value="0" selected="selected">2 x 1</option>
+          <option value="1">1.5 x 1.5</option>
+        </select><br /><br />
+
+        Angle of Lid:<br />
+        <select id="angleSelect">
+          <option value="100">0 degrees</option>
+          <option value="010">20 degrees</option>
+          <option value="001" selected="selected">40 degrees</option>
+        </select><br /><br />
+
+        Amount of Insulation:<br />
+        <select id="insulationSelect">
+          <option value="100" selected="selected">none</option>
+          <option value="010">1-inch thick</option>
+          <option value="001">2-inch thick</option>
+        </select><br /><br />
+        
+        Lid Color:<br />
+        <select id="tintSelect">
+          <option value="0" selected="selected">clear</option>
+          <option value="1">tinted</option>
+        </select><br /><br />
+
+        <div style="width:150px; margin-top:10px;">
+          <button id="runTrialBtn" class="btn" style="width:120px; margin: 0px auto;">Run</button>
+        </div>
+
+      </div><br style="clear:both;" />
+
+      <div style="margin-top:20px;">
+        <div id="table1"></div>
+      </div>
+
+    </div>
+    
+  </body>
+</html>
